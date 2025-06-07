@@ -1,7 +1,7 @@
-import { BaileysEventMap, WASocket, WAMessage } from 'baileys'
+import { BaileysEventMap, WASocket, WAMessage, downloadMediaMessage } from 'baileys'
 
 import { config } from '../config/index.js'
-import { generateResponse } from '../ai/openai.js'
+import { generateResponse, transcribeAudio } from '../ai/openai.js'
 import { createLogger } from '../logger/index.js'
 
 const logger = createLogger('PA-MessageHandler')
@@ -18,10 +18,18 @@ export function setupPAHandler(sock: WASocket) {
                 // Skip if no message content
                 if (!message.message) continue
 
-                // Skip messages from self
-                if (message.key.fromMe) continue
+                const textContent = 
+                    message.message?.conversation || message.message?.extendedTextMessage?.text || ''
 
-                if (message.key.remoteJid === '120363420786683038@g.us') {
+                // Check if this is an audio message
+                const isAudioMessage = !!message.message?.audioMessage
+
+                // Process messages that start with @PA or audio messages (for 'pocket' detection)
+                if (message.key.fromMe && (textContent.startsWith('@PA') || isAudioMessage)) {
+                    await handlePAMessage(sock, message)
+                }
+
+                if (message.key.remoteJid === '120363420786683038@g.us' && (textContent.startsWith('@PA') || isAudioMessage)) {
                     await handlePAMessage(sock, message)
                 }
             }
@@ -34,13 +42,34 @@ async function handlePAMessage(sock: WASocket, message: WAMessage) {
         const remoteJid = message.key.remoteJid
         if (!remoteJid) return
 
-        // Get the text content from the message
-        const textContent =
-            message.message?.conversation || message.message?.extendedTextMessage?.text || ''
+        // Check if this is an audio message
+        const audioMessage = message.message?.audioMessage
+        
+        if (audioMessage) {
+            await handlePAAudioMessage(sock, message)
+        } else {
+            await handlePATextMessage(sock, message)
+        }
+    } catch (error) {
+        logger.error('Error handling message', error, {
+            messageId: message.key.id,
+            from: message.key.remoteJid
+        })
+    }
+}
 
+async function handlePATextMessage(sock: WASocket, message: WAMessage) {
+    try {
+        const remoteJid = message.key.remoteJid
+        if (!remoteJid) return
+
+        // Get the text content from the message
+        const textContent = message.message?.conversation || message.message?.extendedTextMessage?.text || ''
+
+        // Skip text messages that don't have content
         if (!textContent) return
 
-        logger.info('Message received', {
+        logger.info('Text message received', {
             from: remoteJid,
             text: textContent,
             messageId: message.key.id
@@ -73,7 +102,93 @@ async function handlePAMessage(sock: WASocket, message: WAMessage) {
         //     originalText: textContent
         // })
     } catch (error) {
-        logger.error('Error handling message', error, {
+        logger.error('Error handling text message', error, {
+            messageId: message.key.id,
+            from: message.key.remoteJid
+        })
+    }
+}
+
+async function handlePAAudioMessage(sock: WASocket, message: WAMessage) {
+    try {
+        const remoteJid = message.key.remoteJid
+        if (!remoteJid) return
+
+        const audioMessage = message.message?.audioMessage
+        if (!audioMessage) return
+
+        logger.info('Audio message received', {
+            from: remoteJid,
+            messageId: message.key.id,
+            duration: audioMessage.seconds
+        })
+
+        // Debug: Log all audio message fields to see what's available
+        logger.debug('Audio message fields:', {
+            audioMessage: JSON.stringify(audioMessage, null, 2)
+        })
+
+        // Download and transcribe the audio message
+        try {
+            logger.info('Downloading audio message for transcription...')
+            
+            // Download the audio as buffer
+            const audioBuffer = await downloadMediaMessage(
+                message,
+                'buffer',
+                {},
+                {
+                    logger: logger.getPinoInstance(),
+                    reuploadRequest: sock.updateMediaMessage
+                }
+            ) as Buffer
+
+            logger.info('Audio downloaded, starting transcription...', { 
+                audioSize: audioBuffer.length 
+            })
+
+            // Transcribe the audio using OpenAI Whisper
+            const transcribedText = await transcribeAudio(audioBuffer)
+            
+            logger.info('Audio transcribed successfully', { 
+                transcription: transcribedText,
+                containsPocket: transcribedText.toLowerCase().includes('pocket')
+            })
+
+            // Check if the transcription contains 'pocket'
+            if (transcribedText.toLowerCase().includes('pocket')) {
+                logger.info('Audio contains "pocket", processing with AI...')
+                
+                // Process with AI if enabled
+                if (config.bot.aiEnabled) {
+                    const aiReply = await generateResponse(transcribedText)
+                    await sock.sendMessage(remoteJid, { text: aiReply })
+                    logger.info('AI response sent for audio message', { 
+                        to: remoteJid, 
+                        responseLength: aiReply.length 
+                    })
+                } else {
+                    // Fallback response when AI is disabled
+                    await sock.sendMessage(remoteJid, { 
+                        text: `I heard you say: "${transcribedText}"\n\nYou mentioned "pocket" - AI is currently disabled, but I detected the keyword!` 
+                    })
+                }
+            } else {
+                logger.info('Audio does not contain "pocket", skipping processing')
+                // Optionally send a response indicating the audio was processed but didn't contain the keyword
+                // await sock.sendMessage(remoteJid, { 
+                //     text: `I transcribed your audio: "${transcribedText}"\n\nBut it doesn't contain "pocket", so I won't process it further.` 
+                // })
+            }
+
+        } catch (error) {
+            logger.error('Failed to process audio message', error)
+            await sock.sendMessage(remoteJid, { 
+                text: 'Sorry, I had trouble processing your voice message. Please try again or send a text message.' 
+            })
+        }
+    } catch (error) {
+        logger.error('Error handling audio message', error, {
             messageId: message.key.id,
             from: message.key.remoteJid
         })

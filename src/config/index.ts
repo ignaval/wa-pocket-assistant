@@ -30,7 +30,8 @@ export const config = {
     // OpenAI
     ai: {
         apiKey: process.env.OPENAI_API_KEY || '',
-        systemPrompt: process.env.AI_SYSTEM_PROMPT || ''
+        systemPrompt: process.env.AI_SYSTEM_PROMPT || '',
+        transcriptionLanguage: process.env.AI_TRANSCRIPTION_LANGUAGE || 'en'
     },
 
     // Logging

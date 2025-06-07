@@ -25,3 +25,24 @@ export async function generateResponse(prompt: string): Promise<string> {
 
     return chat.choices[0]?.message?.content?.trim() || ''
 }
+
+export async function transcribeAudio(audioBuffer: Buffer, filename: string = 'audio.ogg'): Promise<string> {
+    if (!client) {
+        throw new Error('OpenAI API key is missing. Set OPENAI_API_KEY to enable audio transcription.')
+    }
+
+    try {
+        // Create a File object from the buffer
+        const audioFile = new File([audioBuffer], filename, { type: 'audio/ogg' })
+        
+        const transcription = await client.audio.transcriptions.create({
+            file: audioFile,
+            model: 'whisper-1',
+            language: config.ai.transcriptionLanguage
+        })
+
+        return transcription.text?.trim() || ''
+    } catch (error) {
+        throw new Error(`Audio transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+}
