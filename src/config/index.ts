@@ -10,7 +10,7 @@ export const config = {
     baileys: {
         browser: Browsers.macOS('Chrome'),
         generateHighQualityLinkPreview: true,
-        syncFullHistory: false,
+        syncFullHistory: process.env.SYNC_FULL_HISTORY === 'true',
         markOnlineOnConnect: false,
         keepAliveIntervalMs: 60000,
         qrTimeout: 40000

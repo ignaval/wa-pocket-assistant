@@ -4,6 +4,7 @@ import { config } from '../config/index.js'
 import { generateResponse } from '../ai/openai.js'
 import { createLogger } from '../logger/index.js'
 
+
 const logger = createLogger('MessageHandler')
 
 export function setupMessageHandler(sock: WASocket) {
@@ -19,7 +20,7 @@ export function setupMessageHandler(sock: WASocket) {
                 if (!message.message) continue
 
                 // Skip messages from self
-                if (message.key.fromMe) continue
+                // if (message.key.fromMe) continue
 
                 await handleMessage(sock, message)
             }

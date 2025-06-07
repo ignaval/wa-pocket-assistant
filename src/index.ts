@@ -8,10 +8,12 @@ import { config } from './config/index.js'
 import { createAuthenticatedSocket } from './socket/index.js'
 import { setSocket } from './socket/manager.js'
 import { setupMessageHandler } from './handlers/messageHandler.js'
+import { setupGroupCommandHandler } from './handlers/groupCommandHandler.js'
 import { startServer } from './server/index.js'
 import { setStatus } from './store/connectionStore.js'
 import { setCurrentQR } from './store/qrStore.js'
 import { createLogger } from './logger/index.js'
+
 
 const logger = createLogger('HackTheChat')
 
@@ -21,7 +23,8 @@ async function connectToWhatsApp() {
 
     const { sock, saveCreds } = await createAuthenticatedSocket()
     setSocket(sock)
-    setupMessageHandler(sock)
+    // setupMessageHandler(sock)
+    setupGroupCommandHandler(sock)
 
     sock.ev.process(async (events: Partial<BaileysEventMap>) => {
         if (events['connection.update']) {
@@ -67,6 +70,8 @@ async function connectToWhatsApp() {
                 setStatus('open', sock.user?.id || null)
                 logger.info('✅ Connected to WhatsApp successfully!')
                 logger.info('📱 Device registered', { deviceName: config.bot.name })
+                
+
             } else if (connection === 'connecting') {
                 setStatus('connecting')
                 logger.info('🔄 Connecting to WhatsApp...')
