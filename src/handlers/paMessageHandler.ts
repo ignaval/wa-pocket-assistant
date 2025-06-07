@@ -25,19 +25,59 @@ export function setupPAHandler(sock: WASocket) {
                 const isAudioMessage = !!message.message?.audioMessage
 
                 // Process messages that start with @PA or audio messages (for 'pocket' detection)
-                if (message.key.fromMe && (textContent.startsWith('@PA') || isAudioMessage)) {
-                    await handlePAMessage(sock, message)
+                if (message.key.fromMe && (textContent.startsWith('@PA') || textContent.startsWith('@pa') || isAudioMessage)) {
+                    await handlePAMessage(sock, message, true) // Check keywords
                 }
 
-                if (message.key.remoteJid === '120363420786683038@g.us' && (textContent.startsWith('@PA') || isAudioMessage)) {
-                    await handlePAMessage(sock, message)
+                if (message.key.remoteJid === '120363420786683038@g.us') {
+                    await handlePAMessage(sock, message, false) // Don't check keywords, process directly
                 }
             }
         }
     )
 }
 
-async function handlePAMessage(sock: WASocket, message: WAMessage) {
+async function processWithAI(sock: WASocket, remoteJid: string, content: string, messageType: 'text' | 'audio') {
+    // If AI is enabled, use AI for all messages
+    if (config.bot.aiEnabled) {
+        logger.info('Processing AI request', { 
+            prompt: content, 
+            from: remoteJid, 
+            messageType 
+        })
+
+        try {
+            const aiReply = await generateResponse(content)
+            await sock.sendMessage(remoteJid, { text: aiReply })
+            logger.info('AI response sent', { 
+                to: remoteJid, 
+                responseLength: aiReply.length,
+                messageType 
+            })
+        } catch (error) {
+            logger.error('AI request failed', error, { messageType })
+            await sock.sendMessage(remoteJid, {
+                text: 'Sorry, AI is currently unavailable. Please try again later.'
+            })
+        }
+        return
+    }
+
+    // Fallback responses when AI is disabled
+    if (messageType === 'audio') {
+        await sock.sendMessage(remoteJid, { 
+            text: `I heard you say: "${content}"\n\nYou mentioned "pocket" - AI is currently disabled, but I detected the keyword!` 
+        })
+    } else {
+        // For text messages, use echo fallback (commented out in original)
+        // await sock.sendMessage(remoteJid, {
+        //     text: `Echo: ${content}`
+        // })
+        // logger.info('Echo response sent', { to: remoteJid, originalText: content })
+    }
+}
+
+async function handlePAMessage(sock: WASocket, message: WAMessage, checkKeywords: boolean = true) {
     try {
         const remoteJid = message.key.remoteJid
         if (!remoteJid) return
@@ -46,9 +86,9 @@ async function handlePAMessage(sock: WASocket, message: WAMessage) {
         const audioMessage = message.message?.audioMessage
         
         if (audioMessage) {
-            await handlePAAudioMessage(sock, message)
+            await handlePAAudioMessage(sock, message, checkKeywords)
         } else {
-            await handlePATextMessage(sock, message)
+            await handlePATextMessage(sock, message, checkKeywords)
         }
     } catch (error) {
         logger.error('Error handling message', error, {
@@ -58,7 +98,7 @@ async function handlePAMessage(sock: WASocket, message: WAMessage) {
     }
 }
 
-async function handlePATextMessage(sock: WASocket, message: WAMessage) {
+async function handlePATextMessage(sock: WASocket, message: WAMessage, checkKeywords: boolean = true) {
     try {
         const remoteJid = message.key.remoteJid
         if (!remoteJid) return
@@ -69,28 +109,24 @@ async function handlePATextMessage(sock: WASocket, message: WAMessage) {
         // Skip text messages that don't have content
         if (!textContent) return
 
+        // Check for @PA or @pa keywords if required
+        if (checkKeywords && !textContent.startsWith('@PA') && !textContent.startsWith('@pa')) {
+            logger.debug('Text message does not start with @PA or @pa, skipping processing', {
+                from: remoteJid,
+                text: textContent.substring(0, 50) + '...'
+            })
+            return
+        }
+
         logger.info('Text message received', {
             from: remoteJid,
             text: textContent,
-            messageId: message.key.id
+            messageId: message.key.id,
+            keywordCheckEnabled: checkKeywords
         })
 
-        // If AI is enabled, use AI for all messages
-        if (config.bot.aiEnabled) {
-            logger.info('Processing AI request', { prompt: textContent, from: remoteJid })
-
-            try {
-                const aiReply = await generateResponse(textContent)
-                await sock.sendMessage(remoteJid, { text: aiReply })
-                logger.info('AI response sent', { to: remoteJid, responseLength: aiReply.length })
-            } catch (error) {
-                logger.error('AI request failed', error)
-                await sock.sendMessage(remoteJid, {
-                    text: 'Sorry, AI is currently unavailable. Please try again later.'
-                })
-            }
-            return
-        }
+        // Process with AI if enabled
+        await processWithAI(sock, remoteJid, textContent, 'text')
 
         // Fallback to echo if AI is disabled
         // await sock.sendMessage(remoteJid, {
@@ -109,7 +145,7 @@ async function handlePATextMessage(sock: WASocket, message: WAMessage) {
     }
 }
 
-async function handlePAAudioMessage(sock: WASocket, message: WAMessage) {
+async function handlePAAudioMessage(sock: WASocket, message: WAMessage, checkKeywords: boolean = true) {
     try {
         const remoteJid = message.key.remoteJid
         if (!remoteJid) return
@@ -152,27 +188,18 @@ async function handlePAAudioMessage(sock: WASocket, message: WAMessage) {
             
             logger.info('Audio transcribed successfully', { 
                 transcription: transcribedText,
-                containsPocket: transcribedText.toLowerCase().includes('pocket')
+                containsPocket: transcribedText.toLowerCase().includes('pocket'),
+                keywordCheckEnabled: checkKeywords
             })
 
-            // Check if the transcription contains 'pocket'
-            if (transcribedText.toLowerCase().includes('pocket')) {
-                logger.info('Audio contains "pocket", processing with AI...')
-                
-                // Process with AI if enabled
-                if (config.bot.aiEnabled) {
-                    const aiReply = await generateResponse(transcribedText)
-                    await sock.sendMessage(remoteJid, { text: aiReply })
-                    logger.info('AI response sent for audio message', { 
-                        to: remoteJid, 
-                        responseLength: aiReply.length 
-                    })
+            // Check if the transcription contains 'pocket' (if keyword checking is enabled)
+            if (!checkKeywords || transcribedText.toLowerCase().includes('pocket')) {
+                if (checkKeywords) {
+                    logger.info('Audio contains "pocket", processing with AI...')
                 } else {
-                    // Fallback response when AI is disabled
-                    await sock.sendMessage(remoteJid, { 
-                        text: `I heard you say: "${transcribedText}"\n\nYou mentioned "pocket" - AI is currently disabled, but I detected the keyword!` 
-                    })
+                    logger.info('Processing audio without keyword check...')
                 }
+                await processWithAI(sock, remoteJid, transcribedText, 'audio')
             } else {
                 logger.info('Audio does not contain "pocket", skipping processing')
                 // Optionally send a response indicating the audio was processed but didn't contain the keyword
