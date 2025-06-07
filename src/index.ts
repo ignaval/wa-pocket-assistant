@@ -9,6 +9,8 @@ import { createAuthenticatedSocket } from './socket/index.js'
 import { setSocket } from './socket/manager.js'
 import { setupMessageHandler } from './handlers/messageHandler.js'
 import { setupGroupCommandHandler } from './handlers/groupCommandHandler.js'
+import { setupHistoryCommandHandler } from './handlers/historyHandler.js'
+
 import { startServer } from './server/index.js'
 import { setStatus } from './store/connectionStore.js'
 import { setCurrentQR } from './store/qrStore.js'
@@ -25,6 +27,8 @@ async function connectToWhatsApp() {
     setSocket(sock)
     // setupMessageHandler(sock)
     setupGroupCommandHandler(sock)
+    setupHistoryCommandHandler(sock)
+
 
     sock.ev.process(async (events: Partial<BaileysEventMap>) => {
         if (events['connection.update']) {

@@ -123,3 +123,4 @@ qr_code.png
 
 # Cache files
 groups_cache.json
+history_cache/
