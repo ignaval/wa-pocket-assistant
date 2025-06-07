@@ -7,7 +7,8 @@ import qrcode from 'qrcode-terminal'
 import { config } from './config/index.js'
 import { createAuthenticatedSocket } from './socket/index.js'
 import { setSocket } from './socket/manager.js'
-import { setupMessageHandler } from './handlers/messageHandler.js'
+// import { setupMessageHandler } from './handlers/messageHandler.js'
+import { setupPAHandler } from './handlers/paMessageHandler.js'
 import { startServer } from './server/index.js'
 import { setStatus } from './store/connectionStore.js'
 import { setCurrentQR } from './store/qrStore.js'
@@ -21,7 +22,8 @@ async function connectToWhatsApp() {
 
     const { sock, saveCreds } = await createAuthenticatedSocket()
     setSocket(sock)
-    setupMessageHandler(sock)
+    // setupMessageHandler(sock)
+    setupPAHandler(sock)
 
     sock.ev.process(async (events: Partial<BaileysEventMap>) => {
         if (events['connection.update']) {
