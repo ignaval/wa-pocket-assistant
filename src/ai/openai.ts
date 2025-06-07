@@ -19,7 +19,10 @@ export async function generateResponse(prompt: string): Promise<string> {
     messages.push({ role: 'user', content: prompt })
 
     const chat = await client.chat.completions.create({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-4.1-mini-2025-04-14',
+        // With search
+        // model: 'gpt-4o-mini-search-preview-2025-03-11',
+        // temperature: 0.7,
         messages
     })
 

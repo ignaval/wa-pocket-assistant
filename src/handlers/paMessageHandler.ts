@@ -48,7 +48,8 @@ async function processWithAI(sock: WASocket, remoteJid: string, content: string,
 
         try {
             const aiReply = await generateResponse(content)
-            await sock.sendMessage(remoteJid, { text: aiReply })
+            const aiReplyPrefix = '[PA]: '
+            await sock.sendMessage(remoteJid, { text: aiReplyPrefix + aiReply })
             logger.info('AI response sent', { 
                 to: remoteJid, 
                 responseLength: aiReply.length,
